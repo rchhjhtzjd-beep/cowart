@@ -1,0 +1,5 @@
+node_modules/
+dist/
+canvas/
+.DS_Store
+*.tmp
