@@ -88,6 +88,13 @@ app.use(express.json({ limit: '55mb' }))
 // Static asset serving
 // ---------------------------------------------------------------------------
 
+// Serve Vite build artifacts (JS, CSS, favicon, etc.) from dist/ first.
+// This handles /assets/index-*.js, /cowart-logo.svg, etc.
+// When a file is not found in dist/, express.static calls next()
+// and the canvas asset middlewares below pick it up.
+app.use(express.static(distPath))
+
+// Canvas user-uploaded assets — only reached when the file is NOT in dist/
 app.use('/assets', async (req, res, next) => {
   if (!req.path || req.path === '/') { next(); return }
   serveAssetFile(req, res, next)
@@ -268,7 +275,6 @@ app.put('/api/canvas', async (req, res) => {
 // ---------------------------------------------------------------------------
 
 if (IS_PRODUCTION) {
-  app.use(express.static(distPath))
   app.get('*', (req, res) => {
     // Only serve index.html for non-API routes
     if (!req.path.startsWith('/api/') && !req.path.startsWith('/assets/') && !req.path.startsWith('/page-assets/')) {
