@@ -1,7 +1,10 @@
 {
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile"
+    "dockerfilePath": "Dockerfile",
+    "buildArgs": {
+      "VITE_TLDRAW_LICENSE_KEY": "${VITE_TLDRAW_LICENSE_KEY}"
+    }
   },
   "deploy": {
     "startCommand": "node server/index.js",
