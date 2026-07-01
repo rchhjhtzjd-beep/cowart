@@ -399,14 +399,14 @@ app.post('/api/generate', async (req, res) => {
     if (customWidth && customHeight) size = `${customWidth}x${customHeight}`
     else if (aspectId && AGNES_SIZE_MAP[aspectId]) size = AGNES_SIZE_MAP[aspectId]
 
-    const body = { model: AGNES_MODEL, prompt: prompt.trim(), size, extra_body: { response_format: 'b64_json' } }
-    if (negativePrompt?.trim()) body.extra_body.negative_prompt = negativePrompt.trim()
-    if (typeof seed === 'number' && seed >= 0 && seed <= 2147483647) body.extra_body.seed = seed
-    if (referenceImages?.length > 0) body.extra_body.image = referenceImages
+    const body = { model: AGNES_MODEL, prompt: prompt.trim(), size, response_format: 'b64_json' }
+    if (negativePrompt?.trim()) body.negative_prompt = negativePrompt.trim()
+    if (typeof seed === 'number' && seed >= 0 && seed <= 2147483647) body.seed = seed
+    if (referenceImages?.length > 0) body.image = referenceImages
     const url = new URL(AGNES_API_URL)
     const payload = JSON.stringify(body)
     const d = await new Promise((resolve, reject) => {
-    const h = https
+      const h = https
       const r = h.request({
         hostname: url.hostname, port: 443, path: url.pathname, method: 'POST', timeout: 30000,
         headers: { Authorization: `Bearer ${AGNES_API_KEY}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
