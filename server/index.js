@@ -26,7 +26,16 @@ import {
   saveAssetToGlobal,
   saveCanvasSnapshot,
   saveSelection,
-  saveViewState
+  saveViewState,
+  loadImageHistory,
+  saveImageHistory,
+  appendImageHistory,
+  deleteImageHistoryEntry,
+  loadPageManifest,
+  savePageManifest,
+  createPageRecord,
+  deletePageFile,
+  renamePageInManifest
 } from './store.js'
 
 // ---------------------------------------------------------------------------
@@ -265,6 +274,103 @@ app.put('/api/canvas', async (req, res) => {
     const result = await saveCanvasSnapshot(sanitized.snapshot)
     sendJson(res, 200, { ok: true, ...result, skippedRecords: sanitized.skippedRecords })
     broadcastCanvasChanged(result)
+  } catch (error) {
+    sendJson(res, 500, { error: error.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// API: Page management
+// ---------------------------------------------------------------------------
+
+app.get('/api/pages', async (req, res) => {
+  try {
+    const manifest = await loadPageManifest()
+    sendJson(res, 200, manifest)
+  } catch (error) {
+    sendJson(res, 500, { error: error.message })
+  }
+})
+
+app.post('/api/pages', async (req, res) => {
+  try {
+    const { name } = req.body || {}
+    const pageId = `page:${randomUUID()}`
+    const manifest = await loadPageManifest()
+    const lastIndex = manifest.pages.length > 0
+      ? Math.max(...manifest.pages.map((p) => p.index))
+      : ''
+    const newIndex = lastIndex > '' ? String.fromCharCode(lastIndex.charCodeAt(0) + 1) : 'a'
+    const result = await createPageRecord(pageId, name || `页面 ${manifest.pages.length + 1}`, newIndex)
+    sendJson(res, 200, { pageId: result.pageId, name: result.name })
+  } catch (error) {
+    sendJson(res, 500, { error: error.message })
+  }
+})
+
+app.delete('/api/pages/:pageId', async (req, res) => {
+  try {
+    const pageId = req.params.pageId
+    await deletePageFile(pageId)
+    const manifest = await loadPageManifest()
+    manifest.pages = manifest.pages.filter((p) => p.id !== pageId)
+    await savePageManifest(manifest)
+    sendJson(res, 200, { ok: true })
+  } catch (error) {
+    sendJson(res, 500, { error: error.message })
+  }
+})
+
+app.put('/api/pages/:pageId/rename', async (req, res) => {
+  try {
+    const { name } = req.body || {}
+    if (!name) {
+      sendJson(res, 400, { error: 'Missing name' })
+      return
+    }
+    const manifest = await renamePageInManifest(req.params.pageId, name)
+    sendJson(res, 200, manifest)
+  } catch (error) {
+    sendJson(res, 500, { error: error.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// API: Image history
+// ---------------------------------------------------------------------------
+
+app.get('/api/image-history', async (req, res) => {
+  try {
+    const history = await loadImageHistory()
+    sendJson(res, 200, { history })
+  } catch (error) {
+    sendJson(res, 500, { error: error.message })
+  }
+})
+
+app.post('/api/image-history', async (req, res) => {
+  try {
+    const entry = req.body
+    if (!entry || !entry.assetUrl) {
+      sendJson(res, 400, { error: 'Missing assetUrl' })
+      return
+    }
+    await appendImageHistory(entry)
+    sendJson(res, 200, { ok: true })
+  } catch (error) {
+    sendJson(res, 500, { error: error.message })
+  }
+})
+
+app.delete('/api/image-history/:index', async (req, res) => {
+  try {
+    const index = parseInt(req.params.index, 10)
+    if (!Number.isFinite(index)) {
+      sendJson(res, 400, { error: 'Invalid index' })
+      return
+    }
+    const history = await deleteImageHistoryEntry(index)
+    sendJson(res, 200, { history })
   } catch (error) {
     sendJson(res, 500, { error: error.message })
   }

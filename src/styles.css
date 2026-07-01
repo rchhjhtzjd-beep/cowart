@@ -294,3 +294,261 @@ body {
   border: 2px solid var(--tl-color-text);
   border-radius: 4px;
 }
+
+/* Export dropdown */
+.cowart-export-dropdown {
+  position: relative;
+}
+
+.cowart-export-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--tl-surface-panel);
+  border: 1px solid var(--tl-color-border-1);
+  border-radius: var(--tl-radius-2);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  display: flex;
+  flex-direction: column;
+}
+
+.cowart-export-menu-item {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--tl-color-text);
+  background: none;
+  border: none;
+  border-radius: var(--tl-radius-1);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.cowart-export-menu-item:hover {
+  background: var(--tl-color-muted-1);
+}
+
+/* Page tabs */
+.cowart-page-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px 0;
+  background: var(--tl-surface-sidebar);
+  border-bottom: 1px solid var(--tl-color-divider);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.cowart-page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--tl-color-text-2);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  border-radius: var(--tl-radius-1) var(--tl-radius-1) 0 0;
+}
+
+.cowart-page-tab:hover {
+  color: var(--tl-color-text);
+  background: var(--tl-color-muted-1);
+}
+
+.cowart-page-tab--active {
+  color: var(--tl-color-text);
+  border-bottom-color: #2f80ed;
+  background: var(--tl-color-muted-1);
+}
+
+.cowart-page-tab--add {
+  font-size: 16px;
+  font-weight: 400;
+  padding: 4px 10px;
+  color: var(--tl-color-text-2);
+}
+
+.cowart-page-tab--add:hover {
+  color: #2f80ed;
+  background: transparent;
+}
+
+.cowart-page-tab-label {
+  pointer-events: none;
+}
+
+.cowart-page-tab-close {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--tl-color-text-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.cowart-page-tab:hover .cowart-page-tab-close {
+  opacity: 1;
+}
+
+.cowart-page-tab-close:hover {
+  background: var(--tl-color-danger);
+  color: #fff;
+}
+
+.cowart-page-tab-close:disabled {
+  cursor: default;
+  display: none;
+}
+
+.cowart-page-tab-input {
+  width: 100px;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--tl-color-text);
+  background: var(--tl-color-input);
+  border: 1px solid #2f80ed;
+  border-radius: 2px;
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Mobile responsiveness
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 768px) {
+  .cowart-page-tabs {
+    padding: 4px 8px 0;
+  }
+
+  .cowart-page-tab {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .cowart-ai-image-gen-panel {
+    padding: 8px;
+  }
+
+  .cowart-ai-image-gen-textarea {
+    min-height: 48px;
+  }
+
+  .cowart-ai-image-gen-result {
+    aspect-ratio: auto;
+    height: 120px;
+  }
+
+  .cowart-image-history-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  html, body, #root {
+    font-size: 14px;
+  }
+
+  .cowart-page-tabs {
+    padding: 3px 4px 0;
+  }
+
+  .cowart-page-tab {
+    padding: 4px 6px;
+    font-size: 11px;
+    min-height: 32px;
+  }
+
+  .cowart-page-tab-close {
+    width: 14px;
+    height: 14px;
+    font-size: 10px;
+  }
+
+  .cowart-ai-image-gen-panel {
+    padding: 6px;
+    gap: 10px;
+  }
+
+  .cowart-ai-image-gen-heading {
+    font-size: 11px;
+  }
+
+  .cowart-ai-image-gen-textarea {
+    min-height: 44px;
+    padding: 6px 8px;
+    font-size: 14px; /* prevent iOS zoom */
+  }
+
+  .cowart-ai-image-gen-generate-btn {
+    padding: 10px 16px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+
+  .cowart-ai-image-gen-result {
+    height: 100px;
+  }
+
+  .cowart-ai-image-gen-result-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .cowart-ai-image-gen-result-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .cowart-image-history-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+  }
+
+  .cowart-image-history-action-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Ensure touch targets are at least 44px */
+  .tlui-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .cowart-ai-image-gen-upload-btn {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+
+  .cowart-ai-image-gen-seed-field input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .cowart-ai-image-gen-seed-randomize {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+  }
+}

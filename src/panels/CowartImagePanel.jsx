@@ -8,6 +8,7 @@ import { useEditor, useValue } from 'tldraw'
 import { generateImages, SIZE_MAP } from '../api/agnesApi.js'
 import AspectRatioSelector from '../components/AspectRatioSelector'
 import SizeInputs from '../components/SizeInputs'
+import ImageHistory from '../components/ImageHistory'
 import './CowartImagePanel.css'
 
 function blobToBase64(blob) {
@@ -54,6 +55,9 @@ export default function CowartImagePanel() {
   const [customWidth, setCustomWidth] = useState(512)
   const [customHeight, setCustomHeight] = useState(683)
   const [aspectLocked, setAspectLocked] = useState(true)
+  const [negativePrompt, setNegativePrompt] = useState('')
+  const [seed, setSeed] = useState(Math.floor(Math.random() * 2147483647))
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [referencePreview, setReferencePreview] = useState(null)
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -109,7 +113,9 @@ export default function CowartImagePanel() {
       const results = await generateImages({
         prompt,
         aspectId: activePreset,
-        referenceImages: referencePreview ? [referencePreview] : undefined
+        referenceImages: referencePreview ? [referencePreview] : undefined,
+        negativePrompt,
+        seed
       })
       setResults(results)
     } catch (err) {
@@ -117,7 +123,7 @@ export default function CowartImagePanel() {
     } finally {
       setLoading(false)
     }
-  }, [prompt, activePreset, referencePreview])
+  }, [prompt, activePreset, referencePreview, negativePrompt, seed])
 
   const insertImage = useCallback(
     async (imageInfo) => {
@@ -168,6 +174,7 @@ export default function CowartImagePanel() {
         return
       }
 
+      // Insert into tldraw store (same as before)
       if (!selectedHolder) {
         // Standalone: insert on current page
         const pageId = editor.getCurrentPageId()
@@ -206,51 +213,73 @@ export default function CowartImagePanel() {
           }
         ])
         editor.select(shapeId)
-        return
+      } else {
+        // Holder workflow: insert as child of the frame
+        const holder = selectedHolder
+        const holderW = Math.round(holder.props.w)
+        const holderH = Math.round(holder.props.h)
+        const assetId = createShapeId()
+        const shapeId = createShapeId()
+        const parentId = holder.type === 'frame' ? holder.id : holder.parentId
+
+        editor.store.put([
+          {
+            id: assetId,
+            typeName: 'asset',
+            assetType: 'image',
+            props: {
+              name: `ai-generated-${Date.now()}.png`,
+              mimeType: 'image/png',
+              src: assetSrc,
+              w: imgWidth,
+              h: imgHeight,
+              fileSize: null
+            }
+          },
+          {
+            id: shapeId,
+            typeName: 'shape',
+            type: 'image',
+            parentId,
+            x: holder.type === 'frame' ? 0 : holder.x,
+            y: holder.type === 'frame' ? 0 : holder.y,
+            rotation: 0,
+            props: {
+              assetId,
+              w: holderW,
+              h: holderH
+            },
+            meta: { cowartGeneratedForAiImageHolder: holder.id }
+          }
+        ])
+        editor.select(shapeId)
       }
 
-      // Holder workflow: insert as child of the frame
-      const holder = selectedHolder
-      const holderW = Math.round(holder.props.w)
-      const holderH = Math.round(holder.props.h)
-      const assetId = createShapeId()
-      const shapeId = createShapeId()
-      const parentId = holder.type === 'frame' ? holder.id : holder.parentId
-
-      editor.store.put([
-        {
-          id: assetId,
-          typeName: 'asset',
-          assetType: 'image',
-          props: {
-            name: `ai-generated-${Date.now()}.png`,
-            mimeType: 'image/png',
-            src: assetSrc,
-            w: imgWidth,
-            h: imgHeight,
-            fileSize: null
-          }
-        },
-        {
-          id: shapeId,
-          typeName: 'shape',
-          type: 'image',
-          parentId,
-          x: holder.type === 'frame' ? 0 : holder.x,
-          y: holder.type === 'frame' ? 0 : holder.y,
-          rotation: 0,
-          props: {
-            assetId,
-            w: holderW,
-            h: holderH
-          },
-          meta: { cowartGeneratedForAiImageHolder: holder.id }
-        }
-      ])
-      editor.select(shapeId)
+      // Record in image history
+      saveToImageHistory({
+        prompt,
+        negativePrompt,
+        seed,
+        assetUrl: assetSrc,
+        width: imgWidth,
+        height: imgHeight,
+        timestamp: new Date().toISOString()
+      })
     },
-    [selectedHolder, editor, customWidth, customHeight]
+    [selectedHolder, editor, customWidth, customHeight, prompt, negativePrompt, seed]
   )
+
+  async function saveToImageHistory(entry) {
+    try {
+      await fetch('/api/image-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry)
+      })
+    } catch {
+      // History save is non-critical; silently fail
+    }
+  }
 
   const handleDownload = useCallback(async (url) => {
     try {
@@ -329,6 +358,63 @@ export default function CowartImagePanel() {
         />
       </div>
 
+      {/* Advanced options toggle */}
+      <div className="cowart-ai-image-gen-section">
+        <button
+          className="cowart-ai-image-gen-advanced-toggle"
+          type="button"
+          onClick={() => setShowAdvanced((v) => !v)}
+          aria-expanded={showAdvanced}
+        >
+          <svg
+            className="cowart-ai-image-gen-advanced-chevron"
+            viewBox="0 0 24 24"
+            style={{ transform: showAdvanced ? 'rotate(90deg)' : 'none' }}
+          >
+            <path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          高级选项
+        </button>
+        {showAdvanced && (
+          <>
+            <div className="cowart-ai-image-gen-section">
+              <div className="cowart-ai-image-gen-heading">排除内容（可选）</div>
+              <textarea
+                className="cowart-ai-image-gen-textarea cowart-ai-image-gen-textarea--sm"
+                value={negativePrompt}
+                onChange={(e) => setNegativePrompt(e.target.value)}
+                placeholder="不想要的元素…"
+                rows={2}
+              />
+            </div>
+            <div className="cowart-ai-image-gen-seed-row">
+              <label className="cowart-ai-image-gen-seed-field">
+                <span>随机种子</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={2147483647}
+                  value={seed}
+                  onChange={(e) => setSeed(Number(e.target.value))}
+                  onBlur={() => {
+                    const v = Number(seed)
+                    if (!Number.isFinite(v) || v < 0) setSeed(Math.floor(Math.random() * 2147483647))
+                  }}
+                />
+              </label>
+              <button
+                className="cowart-ai-image-gen-seed-randomize"
+                type="button"
+                onClick={() => setSeed(Math.floor(Math.random() * 2147483647))}
+                title="随机种子"
+              >
+                🎲
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Generate button */}
       <button
         className="cowart-ai-image-gen-generate-btn"
@@ -395,6 +481,18 @@ export default function CowartImagePanel() {
           </div>
         )
       })}
+
+      {/* Image History */}
+      <div className="cowart-ai-image-gen-history-heading">历史生成</div>
+      <ImageHistory
+        onInsert={(img) => insertImage({
+          url: null,
+          b64_json: null,
+          width: img.width,
+          height: img.height
+        })}
+        onDelete={() => {}}
+      />
 
       {!results.length && !loading && !error && hasHolder && (
         <div className="cowart-ai-image-gen-placeholder">

@@ -36,12 +36,18 @@ export const SIZE_MAP = {
  * @param {string[]} [params.referenceImages] - URLs for image-to-image
  * @returns {Promise<Array<{url: string, b64_json: string | null}>>}
  */
+/**
+ * @param {string} [params.negativePrompt] - Things to exclude from the image
+ * @param {number} [params.seed] - Reproducibility seed
+ */
 export async function generateImages({
   prompt,
   aspectId,
   customWidth,
   customHeight,
-  referenceImages
+  referenceImages,
+  negativePrompt,
+  seed
 }) {
   if (!prompt?.trim()) {
     throw new Error('Prompt is required')
@@ -64,6 +70,13 @@ export async function generateImages({
     extra_body: {
       response_format: 'b64_json'
     }
+  }
+
+  if (negativePrompt && typeof negativePrompt === 'string' && negativePrompt.trim()) {
+    body.extra_body.negative_prompt = negativePrompt.trim()
+  }
+  if (typeof seed === 'number' && Number.isFinite(seed) && seed >= 0 && seed <= 2147483647) {
+    body.extra_body.seed = seed
   }
 
   // Image-to-image: reference images go inside extra_body.image

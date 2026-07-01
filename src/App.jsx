@@ -44,7 +44,7 @@ import {
 } from 'tldraw'
 import { AllSelection } from '@tiptap/pm/state'
 import 'tldraw/tldraw.css'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import annotationToolIconRaw from './assets/tool-comment.svg?raw'
 import {
   describeSkippedRecord,
@@ -52,6 +52,8 @@ import {
   sanitizeCanvasSnapshotForTldraw
 } from './canvasSnapshot.js'
 import CowartImagePanel from './panels/CowartImagePanel.jsx'
+import { exportCanvasAsPNG, exportCanvasAsSVG } from './utils/canvasExport.js'
+import PageTabs from './components/PageTabs.jsx'
 
 const CANVAS_ENDPOINT = '/api/canvas'
 const CANVAS_EVENTS_ENDPOINT = '/api/canvas-events'
@@ -634,6 +636,8 @@ function CowartToolbar(props) {
       <HandToolbarItem />
       <CowartToolbarItem toolId={AI_IMAGE_TOOL_ID} />
       <CowartToolbarDivider />
+      <ExportDropdown />
+      <CowartToolbarDivider />
       <AssetToolbarItem />
       <DrawToolbarItem />
       <EraserToolbarItem />
@@ -661,6 +665,77 @@ function CowartToolbar(props) {
       <LaserToolbarItem />
       <FrameToolbarItem />
     </DefaultToolbar>
+  )
+}
+
+function ExportDropdown() {
+  const editor = useEditor()
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const handleExport = useCallback(
+    async (mode) => {
+      try {
+        const selectedIds = editor.getSelectedShapeIds()
+        if (mode === 'selection' && selectedIds.length > 0) {
+          if (mode === 'selection' && selectedIds.length === 1) {
+            const shape = editor.getShape(selectedIds[0])
+            if (shape?.type === 'image' || shape?.type === 'geo') {
+              await exportCanvasAsPNG(editor, { shapeIds: selectedIds })
+              return
+            }
+          }
+          await exportCanvasAsPNG(editor, { shapeIds: selectedIds })
+        } else if (mode === 'svg') {
+          await exportCanvasAsSVG(editor)
+        } else {
+          await exportCanvasAsPNG(editor)
+        }
+      } catch (err) {
+        console.error('[Export]', err)
+      }
+      setOpen(false)
+    },
+    [editor]
+  )
+
+  return (
+    <div className="cowart-export-dropdown" ref={ref}>
+      <button
+        className="tlui-button tlui-button__icon"
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="导出画布"
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+      </button>
+      {open && (
+        <div className="cowart-export-menu">
+          <button className="cowart-export-menu-item" type="button" onClick={() => handleExport('viewport')}>
+            导出 PNG (视口)
+          </button>
+          <button className="cowart-export-menu-item" type="button" onClick={() => handleExport('selection')}>
+            导出 PNG (选中)
+          </button>
+          <button className="cowart-export-menu-item" type="button" onClick={() => handleExport('svg')}>
+            导出 SVG
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -754,6 +829,8 @@ export default function App() {
   const [viewState, setViewState] = useState()
   const [loadError, setLoadError] = useState(null)
   const [skippedRecords, setSkippedRecords] = useState([])
+  const [pages, setPages] = useState([])
+  const [editorRef, setEditorRef] = useState(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -795,6 +872,7 @@ export default function App() {
     window.__cowartEditor = editor
     window.__cowartSelection = () => getCowartSelection(editor)
     window.__cowartViewState = () => getCowartViewState(editor)
+    setEditorRef(editor)
     let lastSyncedSelectionState = ''
     let isSelectionStateSaving = false
     let hasPendingSelectionState = false
@@ -1051,6 +1129,25 @@ export default function App() {
       }
     )
 
+    // -----------------------------------------------------------------------
+    // Page management
+    // -----------------------------------------------------------------------
+    async function loadPages() {
+      try {
+        const resp = await fetch('/api/pages')
+        if (!resp.ok) return
+        const data = await resp.json()
+        setPages(data.pages || [])
+      } catch { /* ignore */ }
+    }
+
+    loadPages()
+
+    const unsubscribePageChange = editor.store.listen(
+      () => { loadPages() },
+      { source: 'user', scope: 'document' }
+    )
+
     return () => {
       window.clearTimeout(saveTimer)
       window.clearInterval(selectionStateTimer)
@@ -1066,6 +1163,7 @@ export default function App() {
       unsubscribe()
       unsubscribeAnnotationEditingToolLock()
       unsubscribeAnnotationShapeSync()
+      unsubscribePageChange()
       syncViewState()
       saveCanvas()
     }
@@ -1090,6 +1188,45 @@ export default function App() {
   return (
     <main className="cowart-canvas" aria-label="Cowart infinite canvas">
       <SkippedRecordsNotice records={skippedRecords} />
+      <PageTabs
+        pages={pages}
+        currentPageId={editorRef?.getCurrentPageId()}
+        onCreate={async () => {
+          const pageId = `page:${randomUUID ? '' : ''}`
+          // Create via API
+          try {
+            const resp = await fetch('/api/pages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: `页面 ${pages.length + 1}` })
+            })
+            if (resp.ok) {
+              const data = await resp.json()
+              editorRef?.setCurrentPage(data.pageId)
+            }
+          } catch {}
+        }}
+        onSwitch={(pageId) => editorRef?.setCurrentPage(pageId)}
+        onRename={async (pageId, newName) => {
+          try {
+            await fetch(`/api/pages/${pageId}/rename`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: newName })
+            })
+          } catch {}
+        }}
+        onDelete={async (pageId) => {
+          if (pages.length <= 1) return
+          try {
+            await fetch(`/api/pages/${pageId}`, { method: 'DELETE' })
+            const remaining = pages.filter((p) => p.id !== pageId)
+            if (remaining.length > 0) {
+              editorRef?.setCurrentPage(remaining[0].id)
+            }
+          } catch {}
+        }}
+      />
       <Tldraw
         snapshot={snapshot ?? undefined}
         inferDarkMode

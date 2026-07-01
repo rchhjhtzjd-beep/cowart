@@ -480,3 +480,116 @@ export async function saveAssetToGlobal(imageData, mimeType, name) {
     fileExt
   }
 }
+
+// ---------------------------------------------------------------------------
+// Image history
+// ---------------------------------------------------------------------------
+
+const IMAGE_HISTORY_FILE = join(canvasAssetsDir, 'image-history.json')
+const IMAGE_HISTORY_MAX = 100
+
+export async function loadImageHistory() {
+  try {
+    return await readJsonFile(IMAGE_HISTORY_FILE)
+  } catch (error) {
+    if (error.code === 'ENOENT') return []
+    throw error
+  }
+}
+
+export async function saveImageHistory(history) {
+  await writeJsonAtomic(IMAGE_HISTORY_FILE, history)
+}
+
+export async function appendImageHistory(entry) {
+  const history = await loadImageHistory()
+  history.unshift(entry)
+  if (history.length > IMAGE_HISTORY_MAX) {
+    history.length = IMAGE_HISTORY_MAX
+  }
+  await saveImageHistory(history)
+}
+
+export async function deleteImageHistoryEntry(index) {
+  const history = await loadImageHistory()
+  if (index < 0 || index >= history.length) return history
+  history.splice(index, 1)
+  await saveImageHistory(history)
+  return history
+}
+
+// ---------------------------------------------------------------------------
+// Page management
+// ---------------------------------------------------------------------------
+
+export async function loadPageManifest() {
+  try {
+    return await readJsonFile(pagesManifestFile)
+  } catch (error) {
+    if (error.code === 'ENOENT') return { version: 1, source: 'cowart', pages: [] }
+    throw error
+  }
+}
+
+export async function savePageManifest(manifest) {
+  await writeJsonAtomic(pagesManifestFile, manifest)
+}
+
+export async function createPageRecord(pageId, name, index) {
+  const { createTLStore } = await import('tldraw')
+  const validationStore = createTLStore()
+  const emptySnapshot = validationStore.emptyDocumentSnapshot()
+
+  const pageRecord = {
+    ...emptySnapshot.store[':document'],
+    id: ':document',
+    typeName: 'document'
+  }
+
+  const snapshot = {
+    schema: emptySnapshot.schema,
+    store: {
+      ...emptySnapshot.store,
+      [pageId]: {
+        id: pageId,
+        typeName: 'page',
+        type: 'page',
+        name,
+        index,
+        color: 'transparent',
+        isLocked: false
+      }
+    }
+  }
+
+  const dir = join(canvasPagesDir, pageDirName(pageId))
+  await mkdir(dir, { recursive: true })
+  const filePath = join(dir, canvasFileName)
+  await writeJsonAtomic(filePath, snapshot)
+
+  const manifest = await loadPageManifest()
+  manifest.pages.push({ id: pageId, name, index, path: relative(canvasDir, filePath) })
+  manifest.pages.sort((a, b) => String(a.index).localeCompare(String(b.index)))
+  await savePageManifest(manifest)
+
+  return { pageId, name, index, path: filePath }
+}
+
+export async function deletePageFile(pageId) {
+  const pageDir = join(canvasPagesDir, pageDirName(pageId))
+  try {
+    await rename(pageDir, `${pageDir}.deleted.${Date.now()}`)
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
+export async function renamePageInManifest(pageId, newName) {
+  const manifest = await loadPageManifest()
+  const page = manifest.pages.find((p) => p.id === pageId)
+  if (page) {
+    page.name = newName
+    await savePageManifest(manifest)
+  }
+  return manifest
+}
