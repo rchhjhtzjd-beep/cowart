@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import https from 'node:https'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { extname, resolve as pathResolve } from 'node:path'
@@ -405,7 +406,7 @@ app.post('/api/generate', async (req, res) => {
     const url = new URL(AGNES_API_URL)
     const payload = JSON.stringify(body)
     const d = await new Promise((resolve, reject) => {
-      const h = require('https')
+    const h = https
       const r = h.request({
         hostname: url.hostname, port: 443, path: url.pathname, method: 'POST', timeout: 30000,
         headers: { Authorization: `Bearer ${AGNES_API_KEY}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
