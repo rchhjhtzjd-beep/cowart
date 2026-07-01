@@ -1,165 +1,45 @@
-/**
- * Shared API module for Agnes AI image generation.
- *
- * Covers text-to-image and image-to-image via the Agnes AI API.
- * Key contract detail: `response_format` and `image` must sit inside
- * `extra_body`, NOT at the top level.
- */
+const PROXY_URL = '/api/generate'
 
-const AGNES_API_URL = 'https://apihub.agnes-ai.com/v1/images/generations'
-const AGNES_API_KEY = 'sk-se0tt5bq99AqRVajPl6iGCKo8OPNbkNLptzYPQMSHynrZTst'
-const MODEL = 'agnes-image-2.1-flash'
-
-/**
- * Maps Cowart-style aspect preset IDs to Agnes API size strings.
- * Keys: '1-1', '3-2', '2-3', '4-3', '3-4', '16-9', '9-16'
- * Values: '<W>x<H>' matching Agnes-supported resolutions.
- */
 export const SIZE_MAP = {
-  '1-1': '1024x1024',
-  '3-2': '1024x768',
-  '2-3': '768x1024',
-  '4-3': '1024x768',
-  '3-4': '768x1024',
-  '16-9': '1024x576',
-  '9-16': '576x1024'
+  '1-1': '1024x1024', '3-2': '1024x768', '2-3': '768x1024',
+  '4-3': '1024x768', '3-4': '768x1024', '16-9': '1024x576', '9-16': '576x1024'
 }
 
-/**
- * Retryable fetch wrapper — retries on 5xx and specific upstream errors.
- */
 async function fetchWithRetry(url, options, retries = 3) {
   let lastError
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    let response
-    try {
-      response = await fetch(url, options)
-    } catch (err) {
-      lastError = err
-      if (attempt === retries) throw err
-      await sleep(1000 * Math.pow(2, attempt))
-      continue
-    }
-
-    // Retry on server errors and known upstream failure patterns
-    if (response.ok) return response
-
-    const status = response.status
-    const errorText = await response.text()
-
-    // Transient server errors — retry
-    if (status >= 500 && attempt < retries) {
-      lastError = new Error(`HTTP ${status}: ${errorText || response.statusText}`)
-      await sleep(1000 * Math.pow(2, attempt))
-      continue
-    }
-
-    // Agnes LiteLLM upstream errors — retry a couple times
-    if (errorText.includes('upstream error') && attempt < retries) {
-      lastError = new Error(`HTTP ${status}: ${errorText}`)
-      await sleep(1000 * Math.pow(2, attempt))
-      continue
-    }
-
-    // All other cases — return the response so caller can handle it
-    return new Response(errorText, { status, headers: { 'Content-Type': 'text/plain' } })
+  for (let a = 0; a <= retries; a++) {
+    let r; try { r = await fetch(url, options) } catch (e) { lastError = e; if (a === retries) throw e; await sleep(1000 * Math.pow(2, a)); continue }
+    if (r.ok) return r
+    const s = r.status, t = await r.text()
+    if ((s >= 500 || t.includes('upstream error')) && a < retries) { lastError = new Error(`HTTP ${s}: ${t}`); await sleep(1000 * Math.pow(2, a)); continue }
+    return new Response(t, { status: s, headers: { 'Content-Type': 'text/plain' } })
   }
   throw lastError
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+
+export async function generateImages({ prompt, aspectId, customWidth, customHeight, referenceImages, negativePrompt, seed }) {
+  if (!prompt?.trim()) throw new Error('Prompt required')
+  let size = '1024x768'
+  if (customWidth && customHeight) size = `${customWidth}x${customHeight}`
+  else if (aspectId && SIZE_MAP[aspectId]) size = SIZE_MAP[aspectId]
+
+  const body = { prompt: prompt.trim(), size }
+  if (aspectId && SIZE_MAP[aspectId]) body.aspectId = aspectId
+  if (customWidth && customHeight) { body.customWidth = customWidth; body.customHeight = customHeight }
+  if (negativePrompt?.trim()) body.negativePrompt = negativePrompt.trim()
+  if (typeof seed === 'number' && seed >= 0 && seed <= 2147483647) body.seed = seed
+  if (referenceImages?.length > 0) body.referenceImages = referenceImages
+
+  const r = await fetchWithRetry(PROXY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(`Generate error (${r.status}): ${e.error || r.statusText}`) }
+  return (await r.json()).data || []
 }
 
-/**
- * Generate images via the Agnes AI API.
- *
- * @param {Object} params
- * @param {string} params.prompt - Text prompt for the image
- * @param {string} [params.aspectId] - Preset ID from SIZE_MAP (e.g. '1-1')
- * @param {number} [params.customWidth] - Custom width in pixels
- * @param {number} [params.customHeight] - Custom height in pixels
- * @param {string[]} [params.referenceImages] - URLs for image-to-image
- * @returns {Promise<Array<{url: string, b64_json: string | null}>>}
- */
-/**
- * @param {string} [params.negativePrompt] - Things to exclude from the image
- * @param {number} [params.seed] - Reproducibility seed
- */
-export async function generateImages({
-  prompt,
-  aspectId,
-  customWidth,
-  customHeight,
-  referenceImages,
-  negativePrompt,
-  seed
-}) {
-  if (!prompt?.trim()) {
-    throw new Error('Prompt is required')
-  }
-
-  // Determine size string
-  let size
-  if (customWidth && customHeight) {
-    size = `${customWidth}x${customHeight}`
-  } else if (aspectId && SIZE_MAP[aspectId]) {
-    size = SIZE_MAP[aspectId]
-  } else {
-    size = '1024x768' // API default
-  }
-
-  const body = {
-    model: MODEL,
-    prompt: prompt.trim(),
-    size,
-    extra_body: {
-      response_format: 'b64_json'
-    }
-  }
-
-  if (negativePrompt && typeof negativePrompt === 'string' && negativePrompt.trim()) {
-    body.extra_body.negative_prompt = negativePrompt.trim()
-  }
-  if (typeof seed === 'number' && Number.isFinite(seed) && seed >= 0 && seed <= 2147483647) {
-    body.extra_body.seed = seed
-  }
-
-  // Image-to-image: reference images go inside extra_body.image
-  if (referenceImages && referenceImages.length > 0) {
-    body.extra_body.image = referenceImages
-  }
-
-  const response = await fetchWithRetry(AGNES_API_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${AGNES_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(
-      `Agnes API error (${response.status}): ${errorText || response.statusText}`
-    )
-  }
-
-  const data = await response.json()
-  return data.data || []
+export function getAspectIconStyle(p) {
+  const m = Math.min(22 / p.w, 22 / p.h)
+  return { width: `${Math.max(8, Math.round(p.w * m))}px`, height: `${Math.max(8, Math.round(p.h * m))}px` }
 }
 
-/**
- * Compute inline style for a small aspect-ratio preview icon.
- */
-export function getAspectIconStyle(preset) {
-  const maxSize = 22
-  const scale = Math.min(maxSize / preset.w, maxSize / preset.h)
-  return {
-    width: `${Math.max(8, Math.round(preset.w * scale))}px`,
-    height: `${Math.max(8, Math.round(preset.h * scale))}px`
-  }
-}
-
-export { AGNES_API_URL, MODEL }
+export { PROXY_URL }
