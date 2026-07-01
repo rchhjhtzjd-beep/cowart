@@ -402,10 +402,27 @@ app.post('/api/generate', async (req, res) => {
     if (negativePrompt?.trim()) body.extra_body.negative_prompt = negativePrompt.trim()
     if (typeof seed === 'number' && seed >= 0 && seed <= 2147483647) body.extra_body.seed = seed
     if (referenceImages?.length > 0) body.extra_body.image = referenceImages
-
-    const r = await fetch(AGNES_API_URL, { method: 'POST', headers: { Authorization: `Bearer ${AGNES_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (!r.ok) { const t = await r.text(); sendJson(res, r.status, { error: `Agnes API error (${r.status})` }); return }
-    const d = await r.json()
+    const url = new URL(AGNES_API_URL)
+    const payload = JSON.stringify(body)
+    const d = await new Promise((resolve, reject) => {
+      const h = require('https')
+      const r = h.request({
+        hostname: url.hostname, port: 443, path: url.pathname, method: 'POST', timeout: 30000,
+        headers: { Authorization: `Bearer ${AGNES_API_KEY}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+      }, (rr) => {
+        let c = []
+        rr.on('data', p => c.push(p))
+        rr.on('end', () => {
+          const t = Buffer.concat(c).toString()
+          if (rr.statusCode >= 200 && rr.statusCode < 300) {
+            try { resolve(JSON.parse(t)) } catch (e) { reject(new Error('Invalid JSON from Agnes')) }
+          } else { reject(new Error('Agnes API error (' + rr.statusCode + ')')) }
+        })
+      })
+      r.on('timeout', () => { r.destroy(); reject(new Error('Agnes API timeout (30s)')) })
+      r.on('error', reject)
+      r.write(payload); r.end()
+    })
     sendJson(res, 200, { data: d.data || [] })
   } catch (e) { sendJson(res, 500, { error: e.message }) }
 })
