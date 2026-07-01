@@ -26,6 +26,52 @@ export const SIZE_MAP = {
 }
 
 /**
+ * Retryable fetch wrapper — retries on 5xx and specific upstream errors.
+ */
+async function fetchWithRetry(url, options, retries = 3) {
+  let lastError
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let response
+    try {
+      response = await fetch(url, options)
+    } catch (err) {
+      lastError = err
+      if (attempt === retries) throw err
+      await sleep(1000 * Math.pow(2, attempt))
+      continue
+    }
+
+    // Retry on server errors and known upstream failure patterns
+    if (response.ok) return response
+
+    const status = response.status
+    const errorText = await response.text()
+
+    // Transient server errors — retry
+    if (status >= 500 && attempt < retries) {
+      lastError = new Error(`HTTP ${status}: ${errorText || response.statusText}`)
+      await sleep(1000 * Math.pow(2, attempt))
+      continue
+    }
+
+    // Agnes LiteLLM upstream errors — retry a couple times
+    if (errorText.includes('upstream error') && attempt < retries) {
+      lastError = new Error(`HTTP ${status}: ${errorText}`)
+      await sleep(1000 * Math.pow(2, attempt))
+      continue
+    }
+
+    // All other cases — return the response so caller can handle it
+    return new Response(errorText, { status, headers: { 'Content-Type': 'text/plain' } })
+  }
+  throw lastError
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
  * Generate images via the Agnes AI API.
  *
  * @param {Object} params
@@ -84,7 +130,7 @@ export async function generateImages({
     body.extra_body.image = referenceImages
   }
 
-  const response = await fetch(AGNES_API_URL, {
+  const response = await fetchWithRetry(AGNES_API_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${AGNES_API_KEY}`,
