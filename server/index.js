@@ -399,10 +399,14 @@ app.post('/api/generate', async (req, res) => {
     if (customWidth && customHeight) size = `${customWidth}x${customHeight}`
     else if (aspectId && AGNES_SIZE_MAP[aspectId]) size = AGNES_SIZE_MAP[aspectId]
 
-    const body = { model: AGNES_MODEL, prompt: prompt.trim(), size, response_format: 'b64_json' }
-    if (negativePrompt?.trim()) body.negative_prompt = negativePrompt.trim()
+    const body = { model: AGNES_MODEL, prompt: prompt.trim(), size }
+    const extraBody = { response_format: 'b64_json' }
+    if (negativePrompt?.trim()) extraBody.negative_prompt = negativePrompt.trim()
     if (typeof seed === 'number' && seed >= 0 && seed <= 2147483647) body.seed = seed
-    if (referenceImages?.length > 0) body.image = referenceImages
+    if (referenceImages?.length > 0) extraBody.image = referenceImages
+    if (referenceImages?.length > 0) body.tags = ['img2img']
+    body.extra_body = extraBody
+    console.log('[cowart-server] /api/generate request:', JSON.stringify(body))
     const url = new URL(AGNES_API_URL)
     const payload = JSON.stringify(body)
     const d = await new Promise((resolve, reject) => {
@@ -417,7 +421,9 @@ app.post('/api/generate', async (req, res) => {
           const t = Buffer.concat(c).toString()
           if (rr.statusCode >= 200 && rr.statusCode < 300) {
             try { resolve(JSON.parse(t)) } catch (e) { reject(new Error('Invalid JSON from Agnes')) }
-          } else { reject(new Error('Agnes API error (' + rr.statusCode + ')')) }
+          } else {
+            reject(new Error('Agnes API error (' + rr.statusCode + '): ' + t))
+          }
         })
       })
       r.on('timeout', () => { r.destroy(); reject(new Error('Agnes API timeout (30s)')) })
