@@ -4,6 +4,13 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 
+# tldraw license key for production (Vite build-time env)
+ARG VITE_TLDRAW_LICENSE_KEY
+ENV VITE_TLDRAW_LICENSE_KEY=$VITE_TLDRAW_LICENSE_KEY
+
+# Ensure rebuild when license key changes (invalidates Docker cache)
+RUN if [ -n "$VITE_TLDRAW_LICENSE_KEY" ]; then echo "License key set for build ($(echo $VITE_TLDRAW_LICENSE_KEY | cut -c1-20)... )"; else echo "License key NOT set — canvas will be blank after 5s!"; fi
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
