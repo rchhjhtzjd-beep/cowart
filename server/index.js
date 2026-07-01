@@ -377,6 +377,38 @@ app.delete('/api/image-history/:index', async (req, res) => {
 })
 
 // ---------------------------------------------------------------------------
+// API: Generate image (backend proxy to Agnes AI)
+
+const AGNES_API_URL = 'https://apihub.agnes-ai.com/v1/images/generations'
+const AGNES_API_KEY = process.env.AGNES_API_KEY
+const AGNES_MODEL = 'agnes-image-2.1-flash'
+
+const AGNES_SIZE_MAP = {
+  '1-1': '1024x1024', '3-2': '1024x768', '2-3': '768x1024',
+  '4-3': '1024x768', '3-4': '768x1024', '16-9': '1024x576', '9-16': '576x1024'
+}
+
+app.post('/api/generate', async (req, res) => {
+  try {
+    if (!AGNES_API_KEY) { sendJson(res, 500, { error: 'AGNES_API_KEY not configured' }); return }
+    const { prompt, aspectId, customWidth, customHeight, referenceImages, negativePrompt, seed } = req.body
+    if (!prompt?.trim()) { sendJson(res, 400, { error: 'Prompt required' }); return }
+
+    let size = '1024x768'
+    if (customWidth && customHeight) size = `${customWidth}x${customHeight}`
+    else if (aspectId && AGNES_SIZE_MAP[aspectId]) size = AGNES_SIZE_MAP[aspectId]
+
+    const body = { model: AGNES_MODEL, prompt: prompt.trim(), size, extra_body: { response_format: 'b64_json' } }
+    if (negativePrompt?.trim()) body.extra_body.negative_prompt = negativePrompt.trim()
+    if (typeof seed === 'number' && seed >= 0 && seed <= 2147483647) body.extra_body.seed = seed
+    if (referenceImages?.length > 0) body.extra_body.image = referenceImages
+
+    const r = await fetch(AGNES_API_URL, { method: 'POST', headers: { Authorization: `Bearer ${AGNES_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    if (!r.ok) { const t = await r.text(); sendJson(res, r.status, { error: `Agnes API error (${r.status})` }); return }
+    const d = await r.json()
+    sendJson(res, 200, { data: d.data || [] })
+  } catch (e) { sendJson(res, 500, { error: e.message }) }
+})
 // Production: serve built frontend
 // ---------------------------------------------------------------------------
 
